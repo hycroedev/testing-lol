@@ -5,7 +5,7 @@ FRP_VERSION="0.63.0"
 INSTALL_DIR="/opt/frp"
 SYSTEMD_DIR="/etc/systemd/system"
 
-echo "=== FRP Combined Installer ==="
+echo "=== FRP Installer ==="
 echo "1) Install FRPC (Client)"
 echo "2) Uninstall FRPC (Client)"
 echo "3) Install FRPS (Server)"
@@ -13,7 +13,6 @@ echo "4) Uninstall FRPS (Server)"
 read -p "Choose an option [1-4]: " OPTION
 
 install_frpc() {
-    echo ">>> Installing FRPC..."
     apt-get update -y
     apt-get install -y wget tar
 
@@ -21,20 +20,107 @@ install_frpc() {
     mkdir -p "$INSTALL_DIR"
     tar -xzf /tmp/frp.tar.gz -C "$INSTALL_DIR" --strip-components=1
     rm -f /tmp/frp.tar.gz
-    echo "FRPC installed to $INSTALL_DIR"
 
-    read -p "Enter FRPS server address: " SERVER_IP
-    read -p "Enter FRPS server port [default 7000]: " SERVER_PORT
+    read -p "FRPS server IP: " SERVER_IP
+    read -p "FRPS server port [7000]: " SERVER_PORT
     SERVER_PORT=${SERVER_PORT:-7000}
-    read -p "Enter token: " TOKEN
+    read -p "Token: " TOKEN
 
-    read -p "How many ports do you want to forward? " NUM_PORTS
-    read -p "Enter starting port: " START_PORT
-    read -p "Enter ending port: " END_PORT
+    cat > "$INSTALL_DIR/frpc.ini" <<EOF
+[common]
+server_addr = $SERVER_IP
+server_port = $SERVER_PORT
+token = $TOKEN
+EOF
 
-    if [[ $START_PORT -gt $END_PORT ]] || [[ $NUM_PORTS -lt 1 ]]; then
-        echo "Invalid port range or number of ports."
-        exit 1
+    cat > "$SYSTEMD_DIR/frpc.service" <<EOF
+[Unit]
+Description=FRP Client
+After=network.target
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5s
+ExecStart=$INSTALL_DIR/frpc -c $INSTALL_DIR/frpc.ini
+LimitNOFILE=1000000
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable frpc
+    systemctl restart frpc
+    systemctl status frpc --no-pager
+}
+
+uninstall_frpc() {
+    systemctl stop frpc 2>/dev/null || true
+    systemctl disable frpc 2>/dev/null || true
+    rm -f "$SYSTEMD_DIR/frpc.service"
+    rm -rf "$INSTALL_DIR"
+    systemctl daemon-reload
+    echo "FRPC removed."
+}
+
+install_frps() {
+    apt-get update -y
+    apt-get install -y wget tar
+
+    wget -q https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz -O /tmp/frp.tar.gz
+    mkdir -p "$INSTALL_DIR"
+    tar -xzf /tmp/frp.tar.gz -C "$INSTALL_DIR" --strip-components=1
+    rm -f /tmp/frp.tar.gz
+
+    read -p "Bind port [7000]: " BIND_PORT
+    BIND_PORT=${BIND_PORT:-7000}
+    read -p "Token: " TOKEN
+
+    cat > "$INSTALL_DIR/frps.ini" <<EOF
+[common]
+bind_port = $BIND_PORT
+token = $TOKEN
+EOF
+
+    cat > "$SYSTEMD_DIR/frps.service" <<EOF
+[Unit]
+Description=FRP Server
+After=network.target
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5s
+ExecStart=$INSTALL_DIR/frps -c $INSTALL_DIR/frps.ini
+LimitNOFILE=1000000
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable frps
+    systemctl restart frps
+    systemctl status frps --no-pager
+}
+
+uninstall_frps() {
+    systemctl stop frps 2>/dev/null || true
+    systemctl disable frps 2>/dev/null || true
+    rm -f "$SYSTEMD_DIR/frps.service"
+    rm -rf "$INSTALL_DIR"
+    systemctl daemon-reload
+    echo "FRPS removed."
+}
+
+case $OPTION in
+    1) install_frpc ;;
+    2) uninstall_frpc ;;
+    3) install_frps ;;
+    4) uninstall_frps ;;
+    *) echo "Invalid option"; exit 1 ;;
+esac        exit 1
     fi
 
     cat > "$INSTALL_DIR/frpc.ini" <<EOF

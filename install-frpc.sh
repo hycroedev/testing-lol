@@ -1,70 +1,87 @@
 #!/bin/bash
 set -e
 
-FRP_VERSION="0.54.0"  # Updated to a stable version
+FRP_VERSION="0.54.0"
 INSTALL_DIR="/opt/frp"
 SYSTEMD_DIR="/etc/systemd/system"
 
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
 # Check if running as root
 if [[ $EUID -ne 0 ]]; then
-    echo "This script must be run as root. Use sudo." >&2
+    echo -e "${RED}This script must be run as root. Use: sudo bash $0${NC}" >&2
     exit 1
 fi
 
-echo "=== FRP Installer ==="
-echo "1) Install FRPC (Client)"
-echo "2) Uninstall FRPC (Client)"
-echo "3) Install FRPS (Server)"
-echo "4) Uninstall FRPS (Server)"
-read -p "Choose an option [1-4]: " OPTION
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
 
-install_frpc() {
-    echo "Installing FRP Client..."
-    
-    # Check if already installed
-    if [[ -f "$SYSTEMD_DIR/frpc.service" ]]; then
-        echo "FRPC appears to be already installed. Please uninstall first." >&2
-        exit 1
-    fi
+# Function to detect architecture
+detect_arch() {
+    local arch
+    arch=$(uname -m)
+    case "$arch" in
+        x86_64) echo "amd64" ;;
+        aarch64) echo "arm64" ;;
+        armv7l|armv6l) echo "arm" ;;
+        *) echo "unsupported" ;;
+    esac
+}
 
-    # Install dependencies
-    if ! command -v wget &> /dev/null || ! command -v tar &> /dev/null; then
+# Function to install dependencies
+install_dependencies() {
+    if ! command_exists wget || ! command_exists tar; then
         echo "Installing dependencies..."
         apt-get update -y
         apt-get install -y wget tar
     fi
+}
 
-    # Detect architecture
-    ARCH=$(uname -m)
-    case $ARCH in
-        x86_64)
-            ARCH="amd64"
-            ;;
-        aarch64)
-            ARCH="arm64"
-            ;;
-        armv7l)
-            ARCH="arm"
-            ;;
-        *)
-            echo "Unsupported architecture: $ARCH" >&2
-            exit 1
-            ;;
-    esac
-
-    # Download and extract FRP
-    echo "Downloading FRP v${FRP_VERSION} for ${ARCH}..."
-    if ! wget -q "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_${ARCH}.tar.gz" -O /tmp/frp.tar.gz; then
-        echo "Failed to download FRP. Check version and network." >&2
+# Function to download and extract FRP
+download_frp() {
+    local arch="$1"
+    echo "Downloading FRP v${FRP_VERSION} for ${arch}..."
+    
+    if ! wget -q "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_${arch}.tar.gz" -O /tmp/frp.tar.gz; then
+        echo -e "${RED}Failed to download FRP. Check version and network connection.${NC}" >&2
         exit 1
     fi
 
     mkdir -p "$INSTALL_DIR"
-    tar -xzf /tmp/frp.tar.gz -C "$INSTALL_DIR" --strip-components=1
-    rm -f /tmp/frp.tar.gz
+    tar -xzf /tmp/frp.tar.gz -C /tmp/
+    cp /tmp/frp_${FRP_VERSION}_linux_${arch}/frp* "$INSTALL_DIR/" 2>/dev/null || true
+    rm -rf /tmp/frp.tar.gz /tmp/frp_${FRP_VERSION}_linux_${arch}
+}
+
+# Function to install FRPC
+install_frpc() {
+    echo -e "${GREEN}Installing FRP Client...${NC}"
+    
+    # Check if already installed
+    if [[ -f "$SYSTEMD_DIR/frpc.service" ]]; then
+        echo -e "${YELLOW}FRPC appears to be already installed. Please uninstall first.${NC}" >&2
+        exit 1
+    fi
+
+    local arch
+    arch=$(detect_arch)
+    if [[ "$arch" == "unsupported" ]]; then
+        echo -e "${RED}Unsupported architecture: $(uname -m)${NC}" >&2
+        exit 1
+    fi
+
+    install_dependencies
+    download_frp "$arch"
 
     # Get configuration
-    echo "Configuring FRPC..."
+    echo
+    echo "FRPC Configuration:"
     read -p "FRPS server IP: " SERVER_IP
     read -p "FRPS server port [7000]: " SERVER_PORT
     SERVER_PORT=${SERVER_PORT:-7000}
@@ -72,7 +89,7 @@ install_frpc() {
     echo
 
     # Create frpc.ini
-    cat > "$INSTALL_DIR/frpc.ini" <<EOF
+    cat > "$INSTALL_DIR/frpc.ini" << EOF
 [common]
 server_addr = $SERVER_IP
 server_port = $SERVER_PORT
@@ -89,7 +106,7 @@ EOF
     echo "FRPC configuration saved to $INSTALL_DIR/frpc.ini"
 
     # Create systemd service
-    cat > "$SYSTEMD_DIR/frpc.service" <<EOF
+    cat > "$SYSTEMD_DIR/frpc.service" << EOF
 [Unit]
 Description=FRP Client
 After=network.target
@@ -117,19 +134,26 @@ EOF
     systemctl start frpc
 
     echo "Waiting for service to start..."
-    sleep 2
+    sleep 3
 
     if systemctl is-active --quiet frpc; then
-        echo "FRPC installed and started successfully!"
+        echo -e "${GREEN}FRPC installed and started successfully!${NC}"
+        echo -e "${YELLOW}Service status:${NC}"
         systemctl status frpc --no-pager
+        echo
+        echo -e "${YELLOW}Next steps:${NC}"
+        echo "1. Edit $INSTALL_DIR/frpc.ini to add your services"
+        echo "2. Run: systemctl restart frpc"
+        echo "3. Check logs: journalctl -u frpc -f"
     else
-        echo "FRPC failed to start. Check logs with: journalctl -u frpc" >&2
+        echo -e "${RED}FRPC failed to start. Check logs with: journalctl -u frpc${NC}" >&2
         exit 1
     fi
 }
 
+# Function to uninstall FRPC
 uninstall_frpc() {
-    echo "Uninstalling FRPC..."
+    echo -e "${YELLOW}Uninstalling FRPC...${NC}"
     
     if systemctl is-active --quiet frpc; then
         systemctl stop frpc
@@ -142,65 +166,41 @@ uninstall_frpc() {
     rm -f "$SYSTEMD_DIR/frpc.service"
     systemctl daemon-reload
     
-    # Remove only frpc related files, keep frps if exists
+    # Remove only frpc related files
     if [[ -d "$INSTALL_DIR" ]]; then
         rm -f "$INSTALL_DIR/frpc" "$INSTALL_DIR/frpc.ini"
-        # Remove directory only if no frps files exist
-        if ! ls "$INSTALL_DIR"/frps* >/dev/null 2>&1; then
+        # Remove directory only if empty
+        if [[ -z "$(ls -A "$INSTALL_DIR")" ]]; then
             rm -rf "$INSTALL_DIR"
         fi
     fi
     
-    echo "FRPC uninstalled successfully."
+    echo -e "${GREEN}FRPC uninstalled successfully.${NC}"
 }
 
+# Function to install FRPS
 install_frps() {
-    echo "Installing FRP Server..."
+    echo -e "${GREEN}Installing FRP Server...${NC}"
     
     # Check if already installed
     if [[ -f "$SYSTEMD_DIR/frps.service" ]]; then
-        echo "FRPS appears to be already installed. Please uninstall first." >&2
+        echo -e "${YELLOW}FRPS appears to be already installed. Please uninstall first.${NC}" >&2
         exit 1
     fi
 
-    # Install dependencies
-    if ! command -v wget &> /dev/null || ! command -v tar &> /dev/null; then
-        echo "Installing dependencies..."
-        apt-get update -y
-        apt-get install -y wget tar
-    fi
-
-    # Detect architecture
-    ARCH=$(uname -m)
-    case $ARCH in
-        x86_64)
-            ARCH="amd64"
-            ;;
-        aarch64)
-            ARCH="arm64"
-            ;;
-        armv7l)
-            ARCH="arm"
-            ;;
-        *)
-            echo "Unsupported architecture: $ARCH" >&2
-            exit 1
-            ;;
-    esac
-
-    # Download and extract FRP
-    echo "Downloading FRP v${FRP_VERSION} for ${ARCH}..."
-    if ! wget -q "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_${ARCH}.tar.gz" -O /tmp/frp.tar.gz; then
-        echo "Failed to download FRP. Check version and network." >&2
+    local arch
+    arch=$(detect_arch)
+    if [[ "$arch" == "unsupported" ]]; then
+        echo -e "${RED}Unsupported architecture: $(uname -m)${NC}" >&2
         exit 1
     fi
 
-    mkdir -p "$INSTALL_DIR"
-    tar -xzf /tmp/frp.tar.gz -C "$INSTALL_DIR" --strip-components=1
-    rm -f /tmp/frp.tar.gz
+    install_dependencies
+    download_frp "$arch"
 
     # Get configuration
-    echo "Configuring FRPS..."
+    echo
+    echo "FRPS Configuration:"
     read -p "Bind port [7000]: " BIND_PORT
     BIND_PORT=${BIND_PORT:-7000}
     read -p "Dashboard port [7500]: " DASHBOARD_PORT
@@ -213,7 +213,7 @@ install_frps() {
     echo
 
     # Create frps.ini
-    cat > "$INSTALL_DIR/frps.ini" <<EOF
+    cat > "$INSTALL_DIR/frps.ini" << EOF
 [common]
 bind_port = $BIND_PORT
 token = $TOKEN
@@ -225,7 +225,7 @@ EOF
     echo "FRPS configuration saved to $INSTALL_DIR/frps.ini"
 
     # Create systemd service
-    cat > "$SYSTEMD_DIR/frps.service" <<EOF
+    cat > "$SYSTEMD_DIR/frps.service" << EOF
 [Unit]
 Description=FRP Server
 After=network.target
@@ -253,20 +253,25 @@ EOF
     systemctl start frps
 
     echo "Waiting for service to start..."
-    sleep 2
+    sleep 3
 
     if systemctl is-active --quiet frps; then
-        echo "FRPS installed and started successfully!"
-        echo "Dashboard available at: http://$(curl -s ifconfig.me):$DASHBOARD_PORT"
+        echo -e "${GREEN}FRPS installed and started successfully!${NC}"
+        echo
+        echo -e "${YELLOW}Dashboard available at:${NC} http://your-server-ip:$DASHBOARD_PORT"
+        echo -e "${YELLOW}Username:${NC} $DASHBOARD_USER"
+        echo -e "${YELLOW}Bind port:${NC} $BIND_PORT"
+        echo
         systemctl status frps --no-pager
     else
-        echo "FRPS failed to start. Check logs with: journalctl -u frps" >&2
+        echo -e "${RED}FRPS failed to start. Check logs with: journalctl -u frps${NC}" >&2
         exit 1
     fi
 }
 
+# Function to uninstall FRPS
 uninstall_frps() {
-    echo "Uninstalling FRPS..."
+    echo -e "${YELLOW}Uninstalling FRPS...${NC}"
     
     if systemctl is-active --quiet frps; then
         systemctl stop frps
@@ -279,22 +284,33 @@ uninstall_frps() {
     rm -f "$SYSTEMD_DIR/frps.service"
     systemctl daemon-reload
     
-    # Remove only frps related files, keep frpc if exists
+    # Remove only frps related files
     if [[ -d "$INSTALL_DIR" ]]; then
         rm -f "$INSTALL_DIR/frps" "$INSTALL_DIR/frps.ini"
-        # Remove directory only if no frpc files exist
-        if ! ls "$INSTALL_DIR"/frpc* >/dev/null 2>&1; then
+        # Remove directory only if empty
+        if [[ -z "$(ls -A "$INSTALL_DIR")" ]]; then
             rm -rf "$INSTALL_DIR"
         fi
     fi
     
-    echo "FRPS uninstalled successfully."
+    echo -e "${GREEN}FRPS uninstalled successfully.${NC}"
 }
+
+# Main menu
+echo "=== FRP Installer ==="
+echo "1) Install FRPC (Client)"
+echo "2) Uninstall FRPC (Client)"
+echo "3) Install FRPS (Server)"
+echo "4) Uninstall FRPS (Server)"
+read -p "Choose an option [1-4]: " OPTION
 
 case $OPTION in
     1) install_frpc ;;
     2) uninstall_frpc ;;
     3) install_frps ;;
     4) uninstall_frps ;;
-    *) echo "Invalid option"; exit 1 ;;
+    *) 
+        echo -e "${RED}Invalid option${NC}"
+        exit 1
+        ;;
 esac

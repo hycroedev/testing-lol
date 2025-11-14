@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-FRP_VERSION="0.63.0"
+FRP_VERSION="0.65.0"
 INSTALL_DIR="/opt/frp"
 SYSTEMD_DIR="/etc/systemd/system"
 
@@ -33,48 +33,40 @@ install_frpc() {
     read -p "Enter starting port (SSH port): " START_PORT
     read -p "Enter ending port: " END_PORT
 
-    cat > $INSTALL_DIR/frpc.ini << 'EOF'
-[common]
-server_addr = SERVER_IP_PLACEHOLDER
-server_port = SERVER_PORT_PLACEHOLDER
-token = TOKEN_PLACEHOLDER
-EOF
+    {
+        echo "[common]"
+        echo "server_addr = $SERVER_IP"
+        echo "server_port = $SERVER_PORT"
+        echo "token = $TOKEN"
+    } > "$INSTALL_DIR/frpc.ini"
 
-    sed -i "s/SERVER_IP_PLACEHOLDER/$SERVER_IP/g" $INSTALL_DIR/frpc.ini
-    sed -i "s/SERVER_PORT_PLACEHOLDER/$SERVER_PORT/g" $INSTALL_DIR/frpc.ini
-    sed -i "s/TOKEN_PLACEHOLDER/$TOKEN/g" $INSTALL_DIR/frpc.ini
-
-    cat >> $INSTALL_DIR/frpc.ini << 'EOF'
-[ssh_START_PORT_PLACEHOLDER]
-type = tcp
-local_ip = 127.0.0.1
-local_port = 22
-remote_port = START_PORT_PLACEHOLDER
-EOF
-
-    sed -i "s/START_PORT_PLACEHOLDER/$START_PORT/g" $INSTALL_DIR/frpc.ini
+    {
+        echo "[ssh$START_PORT]"
+        echo "type = tcp"
+        echo "local_ip = 127.0.0.1"
+        echo "local_port = 22"
+        echo "remote_port = $START_PORT"
+    } >> "$INSTALL_DIR/frpc.ini"
 
     CURRENT_PORT=$((START_PORT + 1))
     while [ $CURRENT_PORT -le $END_PORT ]; do
-        cat >> $INSTALL_DIR/frpc.ini << 'EOF'
-[tcp_CURRENT_PORT_PLACEHOLDER]
-type = tcp
-local_ip = 127.0.0.1
-local_port = CURRENT_PORT_PLACEHOLDER
-remote_port = CURRENT_PORT_PLACEHOLDER
-
-[udp_CURRENT_PORT_PLACEHOLDER]
-type = udp
-local_ip = 127.0.0.1
-local_port = CURRENT_PORT_PLACEHOLDER
-remote_port = CURRENT_PORT_PLACEHOLDER
-EOF
-
-        sed -i "s/CURRENT_PORT_PLACEHOLDER/$CURRENT_PORT/g" $INSTALL_DIR/frpc.ini
+        {
+            echo "[tcp$CURRENT_PORT]"
+            echo "type = tcp"
+            echo "local_ip = 127.0.0.1"
+            echo "local_port = $CURRENT_PORT"
+            echo "remote_port = $CURRENT_PORT"
+            echo ""
+            echo "[udp$CURRENT_PORT]"
+            echo "type = udp"
+            echo "local_ip = 127.0.0.1"
+            echo "local_port = $CURRENT_PORT"
+            echo "remote_port = $CURRENT_PORT"
+        } >> "$INSTALL_DIR/frpc.ini"
         CURRENT_PORT=$((CURRENT_PORT + 1))
     done
 
-    cat > $SYSTEMD_DIR/frpc.service << 'EOF'
+    cat > $SYSTEMD_DIR/frpc.service << EOF
 [Unit]
 Description=FRP Client
 After=network.target
@@ -83,14 +75,12 @@ After=network.target
 Type=simple
 Restart=on-failure
 RestartSec=5s
-ExecStart=INSTALL_DIR_PLACEHOLDER/frpc -c INSTALL_DIR_PLACEHOLDER/frpc.ini
+ExecStart=$INSTALL_DIR/frpc -c $INSTALL_DIR/frpc.ini
 LimitNOFILE=1000000
 
 [Install]
 WantedBy=multi-user.target
 EOF
-
-    sed -i "s/INSTALL_DIR_PLACEHOLDER/$INSTALL_DIR/g" $SYSTEMD_DIR/frpc.service
 
     systemctl daemon-reload
     systemctl enable frpc
@@ -128,18 +118,14 @@ install_frps() {
     BIND_UDP=${BIND_UDP:-7001}
     read -p "Enter token: " TOKEN
 
-    cat > $INSTALL_DIR/frps.ini << 'EOF'
-[common]
-bind_port = BIND_PORT_PLACEHOLDER
-bind_udp_port = BIND_UDP_PLACEHOLDER
-token = TOKEN_PLACEHOLDER
-EOF
+    {
+        echo "[common]"
+        echo "bind_port = $BIND_PORT"
+        echo "bind_udp_port = $BIND_UDP"
+        echo "token = $TOKEN"
+    } > "$INSTALL_DIR/frps.ini"
 
-    sed -i "s/BIND_PORT_PLACEHOLDER/$BIND_PORT/g" $INSTALL_DIR/frps.ini
-    sed -i "s/BIND_UDP_PLACEHOLDER/$BIND_UDP/g" $INSTALL_DIR/frps.ini
-    sed -i "s/TOKEN_PLACEHOLDER/$TOKEN/g" $INSTALL_DIR/frps.ini
-
-    cat > $SYSTEMD_DIR/frps.service << 'EOF'
+    cat > $SYSTEMD_DIR/frps.service << EOF
 [Unit]
 Description=FRP Server
 After=network.target
@@ -149,14 +135,12 @@ Type=simple
 User=nobody
 Restart=on-failure
 RestartSec=5s
-ExecStart=INSTALL_DIR_PLACEHOLDER/frps -c INSTALL_DIR_PLACEHOLDER/frps.ini
+ExecStart=$INSTALL_DIR/frps -c $INSTALL_DIR/frps.ini
 LimitNOFILE=1000000
 
 [Install]
 WantedBy=multi-user.target
 EOF
-
-    sed -i "s/INSTALL_DIR_PLACEHOLDER/$INSTALL_DIR/g" $SYSTEMD_DIR/frps.service
 
     systemctl daemon-reload
     systemctl enable frps

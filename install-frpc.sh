@@ -66,21 +66,21 @@ install_frpc() {
         CURRENT_PORT=$((CURRENT_PORT + 1))
     done
 
-    cat > $SYSTEMD_DIR/frpc.service << EOF
-[Unit]
-Description=FRP Client
-After=network.target
-
-[Service]
-Type=simple
-Restart=on-failure
-RestartSec=5s
-ExecStart=$INSTALL_DIR/frpc -c $INSTALL_DIR/frpc.ini
-LimitNOFILE=1000000
-
-[Install]
-WantedBy=multi-user.target
-EOF
+    {
+        echo "[Unit]"
+        echo "Description=FRP Client"
+        echo "After=network.target"
+        echo ""
+        echo "[Service]"
+        echo "Type=simple"
+        echo "Restart=on-failure"
+        echo "RestartSec=5s"
+        echo "ExecStart=$INSTALL_DIR/frpc -c $INSTALL_DIR/frpc.ini"
+        echo "LimitNOFILE=1000000"
+        echo ""
+        echo "[Install]"
+        echo "WantedBy=multi-user.target"
+    } > "$SYSTEMD_DIR/frpc.service"
 
     systemctl daemon-reload
     systemctl enable frpc
@@ -125,22 +125,22 @@ install_frps() {
         echo "token = $TOKEN"
     } > "$INSTALL_DIR/frps.ini"
 
-    cat > $SYSTEMD_DIR/frps.service << EOF
-[Unit]
-Description=FRP Server
-After=network.target
-
-[Service]
-Type=simple
-User=nobody
-Restart=on-failure
-RestartSec=5s
-ExecStart=$INSTALL_DIR/frps -c $INSTALL_DIR/frps.ini
-LimitNOFILE=1000000
-
-[Install]
-WantedBy=multi-user.target
-EOF
+    {
+        echo "[Unit]"
+        echo "Description=FRP Server"
+        echo "After=network.target"
+        echo ""
+        echo "[Service]"
+        echo "Type=simple"
+        echo "User=nobody"
+        echo "Restart=on-failure"
+        echo "RestartSec=5s"
+        echo "ExecStart=$INSTALL_DIR/frps -c $INSTALL_DIR/frps.ini"
+        echo "LimitNOFILE=1000000"
+        echo ""
+        echo "[Install]"
+        echo "WantedBy=multi-user.target"
+    } > "$SYSTEMD_DIR/frps.service"
 
     systemctl daemon-reload
     systemctl enable frps

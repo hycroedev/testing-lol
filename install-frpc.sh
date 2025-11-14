@@ -33,42 +33,48 @@ install_frpc() {
     read -p "Enter starting port (SSH port): " START_PORT
     read -p "Enter ending port: " END_PORT
 
-    cat > $INSTALL_DIR/frpc.ini <<EOF
+    cat > $INSTALL_DIR/frpc.ini << 'EOF'
 [common]
-server_addr = $SERVER_IP
-server_port = $SERVER_PORT
-token = $TOKEN
+server_addr = SERVER_IP_PLACEHOLDER
+server_port = SERVER_PORT_PLACEHOLDER
+token = TOKEN_PLACEHOLDER
 EOF
 
-    # Add SSH port
-    cat >> $INSTALL_DIR/frpc.ini <<EOF
-[ssh$START_PORT]
+    sed -i "s/SERVER_IP_PLACEHOLDER/$SERVER_IP/g" $INSTALL_DIR/frpc.ini
+    sed -i "s/SERVER_PORT_PLACEHOLDER/$SERVER_PORT/g" $INSTALL_DIR/frpc.ini
+    sed -i "s/TOKEN_PLACEHOLDER/$TOKEN/g" $INSTALL_DIR/frpc.ini
+
+    cat >> $INSTALL_DIR/frpc.ini << 'EOF'
+[ssh_START_PORT_PLACEHOLDER]
 type = tcp
 local_ip = 127.0.0.1
 local_port = 22
-remote_port = $START_PORT
+remote_port = START_PORT_PLACEHOLDER
 EOF
 
-    # Add TCP + UDP ports from START_PORT+1 to END_PORT
+    sed -i "s/START_PORT_PLACEHOLDER/$START_PORT/g" $INSTALL_DIR/frpc.ini
+
     CURRENT_PORT=$((START_PORT + 1))
     while [ $CURRENT_PORT -le $END_PORT ]; do
-        cat >> $INSTALL_DIR/frpc.ini <<EOF
-[tcp$CURRENT_PORT]
+        cat >> $INSTALL_DIR/frpc.ini << 'EOF'
+[tcp_CURRENT_PORT_PLACEHOLDER]
 type = tcp
 local_ip = 127.0.0.1
-local_port = $CURRENT_PORT
-remote_port = $CURRENT_PORT
+local_port = CURRENT_PORT_PLACEHOLDER
+remote_port = CURRENT_PORT_PLACEHOLDER
 
-[udp$CURRENT_PORT]
+[udp_CURRENT_PORT_PLACEHOLDER]
 type = udp
 local_ip = 127.0.0.1
-local_port = $CURRENT_PORT
-remote_port = $CURRENT_PORT
+local_port = CURRENT_PORT_PLACEHOLDER
+remote_port = CURRENT_PORT_PLACEHOLDER
 EOF
+
+        sed -i "s/CURRENT_PORT_PLACEHOLDER/$CURRENT_PORT/g" $INSTALL_DIR/frpc.ini
         CURRENT_PORT=$((CURRENT_PORT + 1))
     done
 
-    cat > $SYSTEMD_DIR/frpc.service <<EOF
+    cat > $SYSTEMD_DIR/frpc.service << 'EOF'
 [Unit]
 Description=FRP Client
 After=network.target
@@ -77,12 +83,14 @@ After=network.target
 Type=simple
 Restart=on-failure
 RestartSec=5s
-ExecStart=$INSTALL_DIR/frpc -c $INSTALL_DIR/frpc.ini
+ExecStart=INSTALL_DIR_PLACEHOLDER/frpc -c INSTALL_DIR_PLACEHOLDER/frpc.ini
 LimitNOFILE=1000000
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+    sed -i "s/INSTALL_DIR_PLACEHOLDER/$INSTALL_DIR/g" $SYSTEMD_DIR/frpc.service
 
     systemctl daemon-reload
     systemctl enable frpc
@@ -96,7 +104,6 @@ uninstall_frpc() {
     systemctl stop frpc 2>/dev/null || true
     systemctl disable frpc 2>/dev/null || true
     rm -f "$SYSTEMD_DIR/frpc.service"
-    # Note: This removes the entire FRPC/FRPS install dir; adjust if both are installed
     rm -rf "$INSTALL_DIR"
     systemctl daemon-reload
     echo ">>> FRPC fully removed."
@@ -121,14 +128,18 @@ install_frps() {
     BIND_UDP=${BIND_UDP:-7001}
     read -p "Enter token: " TOKEN
 
-    cat > $INSTALL_DIR/frps.ini <<EOF
+    cat > $INSTALL_DIR/frps.ini << 'EOF'
 [common]
-bind_port = $BIND_PORT
-bind_udp_port = $BIND_UDP
-token = $TOKEN
+bind_port = BIND_PORT_PLACEHOLDER
+bind_udp_port = BIND_UDP_PLACEHOLDER
+token = TOKEN_PLACEHOLDER
 EOF
 
-    cat > $SYSTEMD_DIR/frps.service <<EOF
+    sed -i "s/BIND_PORT_PLACEHOLDER/$BIND_PORT/g" $INSTALL_DIR/frps.ini
+    sed -i "s/BIND_UDP_PLACEHOLDER/$BIND_UDP/g" $INSTALL_DIR/frps.ini
+    sed -i "s/TOKEN_PLACEHOLDER/$TOKEN/g" $INSTALL_DIR/frps.ini
+
+    cat > $SYSTEMD_DIR/frps.service << 'EOF'
 [Unit]
 Description=FRP Server
 After=network.target
@@ -138,12 +149,14 @@ Type=simple
 User=nobody
 Restart=on-failure
 RestartSec=5s
-ExecStart=$INSTALL_DIR/frps -c $INSTALL_DIR/frps.ini
+ExecStart=INSTALL_DIR_PLACEHOLDER/frps -c INSTALL_DIR_PLACEHOLDER/frps.ini
 LimitNOFILE=1000000
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+    sed -i "s/INSTALL_DIR_PLACEHOLDER/$INSTALL_DIR/g" $SYSTEMD_DIR/frps.service
 
     systemctl daemon-reload
     systemctl enable frps
@@ -162,7 +175,6 @@ uninstall_frps() {
     systemctl stop frps 2>/dev/null || true
     systemctl disable frps 2>/dev/null || true
     rm -f "$SYSTEMD_DIR/frps.service"
-    # Note: This removes the entire FRPC/FRPS install dir; adjust if both are installed
     rm -rf "$INSTALL_DIR"
     systemctl daemon-reload
     echo ">>> FRPS fully removed."
@@ -174,151 +186,4 @@ case $OPTION in
     3) install_frps ;;
     4) uninstall_frps ;;
     *) echo "Invalid option"; exit 1 ;;
-esaccat > $INSTALL_DIR/frpc.ini <<EOF
-
-[common]
-server_addr = $SERVER_IP
-server_port = $SERVER_PORT
-token = $TOKEN
-EOF
-
-# Add SSH port  
-cat >> $INSTALL_DIR/frpc.ini <<EOF
-
-[ssh$START_PORT]
-type = tcp
-local_ip = 127.0.0.1
-local_port = 22
-remote_port = $START_PORT
-EOF
-
-# Add TCP + UDP ports from START_PORT+1 to END_PORT  
-CURRENT_PORT=$((START_PORT + 1))  
-while [ $CURRENT_PORT -le $END_PORT ]; do  
-    cat >> $INSTALL_DIR/frpc.ini <<EOF
-
-[tcp$CURRENT_PORT]
-type = tcp
-local_ip = 127.0.0.1
-local_port = $CURRENT_PORT
-remote_port = $CURRENT_PORT
-
-[udp$CURRENT_PORT]
-type = udp
-local_ip = 127.0.0.1
-local_port = $CURRENT_PORT
-remote_port = $CURRENT_PORT
-EOF
-CURRENT_PORT=$((CURRENT_PORT + 1))
-done
-
-cat > $SYSTEMD_DIR/frpc.service <<EOF
-
-[Unit]
-Description=FRP Client
-After=network.target
-
-[Service]
-Type=simple
-Restart=on-failure
-RestartSec=5s
-ExecStart=$INSTALL_DIR/frpc -c $INSTALL_DIR/frpc.ini
-LimitNOFILE=1000000
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload    
-systemctl enable frpc    
-systemctl restart frpc    
-echo "=== FRPC Setup Complete ==="    
-systemctl status frpc --no-pager
-
-}
-
-uninstall_frpc() {
-echo ">>> Stopping FRPC service..."
-systemctl stop frpc 2>/dev/null || true
-systemctl disable frpc 2>/dev/null || true
-rm -f "$SYSTEMD_DIR/frpc.service"
-rm -rf "$INSTALL_DIR"
-systemctl daemon-reload
-echo ">>> FRPC fully removed."
-}
-
-install_frps() {
-echo ">>> Installing FRPS (Server)..."
-
-apt-get update -y    
-apt-get install -y wget tar    
-
-wget -q https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz -O /tmp/frp.tar.gz  
-mkdir -p $INSTALL_DIR    
-tar -zxvf /tmp/frp.tar.gz -C $INSTALL_DIR --strip-components=1    
-rm -f /tmp/frp.tar.gz  
-
-echo "FRPS installed to $INSTALL_DIR"    
-
-read -p "Enter bind port [default 7000]: " BIND_PORT    
-BIND_PORT=${BIND_PORT:-7000}    
-read -p "Enter UDP bind port [default 7001]: " BIND_UDP
-BIND_UDP=${BIND_UDP:-7001}
-read -p "Enter token: " TOKEN    
-
-cat > $INSTALL_DIR/frps.ini <<EOF
-
-[common]
-bind_port = $BIND_PORT
-bind_udp_port = $BIND_UDP
-token = $TOKEN
-EOF
-
-cat > $SYSTEMD_DIR/frps.service <<EOF
-
-[Unit]
-Description=FRP Server
-After=network.target
-
-[Service]
-Type=simple
-User=nobody
-Restart=on-failure
-RestartSec=5s
-ExecStart=$INSTALL_DIR/frps -c $INSTALL_DIR/frps.ini
-LimitNOFILE=1000000
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload    
-systemctl enable frps    
-systemctl restart frps    
-echo "=== FRPS Setup Complete ==="    
-systemctl status frps --no-pager  
-  
-echo ">>> FRPS is now running on:"
-echo "    TCP Port: $BIND_PORT"
-echo "    UDP Port: $BIND_UDP"
-echo ">>> Use this server IP and token for your FRPC clients"
-
-}
-
-uninstall_frps() {
-echo ">>> Stopping FRPS service..."
-systemctl stop frps 2>/dev/null || true
-systemctl disable frps 2>/dev/null || true
-rm -f "$SYSTEMD_DIR/frps.service"
-rm -rf "$INSTALL_DIR"
-systemctl daemon-reload
-echo ">>> FRPS fully removed."
-}
-
-case $OPTION in
-1) install_frpc ;;
-2) uninstall_frpc ;;
-3) install_frps ;;
-4) uninstall_frps ;;
-*) echo "Invalid option"; exit 1 ;;
 esac
